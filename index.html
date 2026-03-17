@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>LocalStorage GetAll() Performance Test</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                   Helvetica, Arial, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      line-height: 1.5;
+    }
+    h1 { margin-bottom: 0.25rem; }
+    .subtitle { color: #666; margin-top: 0; }
+    fieldset {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+    legend { font-weight: bold; }
+    label { display: inline-block; margin-right: 1.5rem; margin-bottom: 0.5rem; }
+    select, input[type="number"] {
+      padding: 4px 8px;
+      border: 1px solid #aaa;
+      border-radius: 3px;
+    }
+    .btn-row { margin: 1rem 0; }
+    button {
+      padding: 8px 16px;
+      margin-right: 0.5rem;
+      margin-bottom: 0.5rem;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+      background: #f5f5f5;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    button:hover:not(:disabled) { background: #e0e0e0; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.primary { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+    button.primary:hover:not(:disabled) { background: #1557b0; }
+    button.danger { background: #d93025; color: #fff; border-color: #d93025; }
+    button.danger:hover:not(:disabled) { background: #a50e0e; }
+    #status {
+      padding: 0.75rem;
+      margin: 1rem 0;
+      border-radius: 4px;
+      background: #f0f0f0;
+      min-height: 2.5rem;
+    }
+    #status.error { background: #fce8e6; color: #d93025; }
+    #status.success { background: #e6f4ea; color: #137333; }
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #ddd;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 0.5rem;
+      display: none;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: #1a73e8;
+      width: 0%;
+      transition: width 0.1s;
+    }
+    #summary {
+      background: #f8f9fa;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 1rem;
+      margin: 1rem 0;
+      display: none;
+    }
+    #summary table { border-collapse: collapse; }
+    #summary td { padding: 2px 12px 2px 0; }
+    #summary td:last-child { font-weight: bold; font-family: monospace; }
+    ol#duration-log {
+      max-height: 400px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      padding: 1rem 1rem 1rem 2.5rem;
+      margin: 0;
+      background: #fff;
+    }
+    ol#duration-log li { padding: 2px 0; font-family: monospace; }
+    .data-size-note { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
+    .hidden-iframe {
+      width: 0; height: 0; border: 0;
+      position: absolute; left: -9999px;
+    }
+  </style>
+</head>
+<body>
+  <h1>LocalStorage GetAll() Performance Test</h1>
+  <p class="subtitle">
+    Benchmarks the synchronous <code>GetAll()</code> Mojo IPC triggered on
+    first <code>localStorage</code> access. Compare SQLite vs LevelDB backends
+    by launching Chrome with <code>--enable-features=DomStorageSqlite</code> or
+    <code>--disable-features=DomStorageSqlite</code>.
+  </p>
+
+  <fieldset>
+    <legend>Configuration</legend>
+
+    <label>
+      Number of entries:
+      <select id="num-entries">
+        <option value="100">100</option>
+        <option value="500">500</option>
+        <option value="1000" selected>1,000</option>
+        <option value="5000">5,000</option>
+        <option value="10000">10,000</option>
+      </select>
+    </label>
+
+    <label>
+      Value size:
+      <select id="value-size">
+        <option value="10">Small (~10 bytes)</option>
+        <option value="100" selected>Medium (~100 bytes)</option>
+        <option value="1000">Large (~1,000 bytes)</option>
+      </select>
+    </label>
+
+    <label>
+      Iterations:
+      <input type="number" id="iterations" value="20" min="1" max="1000"
+             style="width: 5rem">
+    </label>
+
+    <div class="data-size-note" id="data-size-note"></div>
+  </fieldset>
+
+  <div class="btn-row">
+    <button id="btn-populate" class="primary">Populate localStorage</button>
+    <button id="btn-run" class="primary" disabled>Run GetAll() Benchmark</button>
+    <button id="btn-clear" class="danger">Clear localStorage</button>
+    <button id="btn-stop" disabled>Stop</button>
+  </div>
+
+  <div id="status">Ready. Populate localStorage first, then run the benchmark.</div>
+  <div class="progress-bar" id="progress-bar">
+    <div class="progress-bar-fill" id="progress-fill"></div>
+  </div>
+
+  <div id="summary">
+    <strong>Summary</strong>
+    <table>
+      <tr><td>Entries stored:</td><td id="stat-entries">—</td></tr>
+      <tr><td>Iterations:</td><td id="stat-iters">—</td></tr>
+      <tr><td>Min:</td><td id="stat-min">—</td></tr>
+      <tr><td>Max:</td><td id="stat-max">—</td></tr>
+      <tr><td>Median:</td><td id="stat-median">—</td></tr>
+      <tr><td>Mean:</td><td id="stat-mean">—</td></tr>
+      <tr><td>Std Dev:</td><td id="stat-stddev">—</td></tr>
+    </table>
+    <button id="btn-copy" style="margin-top: 0.5rem">Copy Results to Clipboard</button>
+  </div>
+
+  <h2>GetAll() Performance Log</h2>
+  <ol id="duration-log"></ol>
+
+  <script>
+    "use strict";
+
+    // --- DOM refs ---
+    const elNumEntries = document.getElementById("num-entries");
+    const elValueSize = document.getElementById("value-size");
+    const elIterations = document.getElementById("iterations");
+    const elDataSizeNote = document.getElementById("data-size-note");
+    const btnPopulate = document.getElementById("btn-populate");
+    const btnRun = document.getElementById("btn-run");
+    const btnClear = document.getElementById("btn-clear");
+    const btnStop = document.getElementById("btn-stop");
+    const elStatus = document.getElementById("status");
+    const elProgressBar = document.getElementById("progress-bar");
+    const elProgressFill = document.getElementById("progress-fill");
+    const elSummary = document.getElementById("summary");
+    const elLog = document.getElementById("duration-log");
+    const btnCopy = document.getElementById("btn-copy");
+
+    let stopRequested = false;
+    let populated = false;
+    let storedEntryCount = 0;
+    const durations = [];
+
+    // --- Helpers ---
+
+    function setStatus(msg, type) {
+      elStatus.textContent = msg;
+      elStatus.className = type || "";
+    }
+
+    function showProgress(visible) {
+      elProgressBar.style.display = visible ? "block" : "none";
+      if (!visible) elProgressFill.style.width = "0%";
+    }
+
+    function setProgress(pct) {
+      elProgressFill.style.width = pct + "%";
+    }
+
+    function disableAll() {
+      btnPopulate.disabled = true;
+      btnRun.disabled = true;
+      btnClear.disabled = true;
+      btnStop.disabled = true;
+    }
+
+    function enableIdle() {
+      btnPopulate.disabled = false;
+      btnRun.disabled = !populated;
+      btnClear.disabled = false;
+      btnStop.disabled = true;
+    }
+
+    function estimateDataSize() {
+      const n = parseInt(elNumEntries.value);
+      const v = parseInt(elValueSize.value);
+      // Key "k_NNNNN" ≈ 7 chars average, value = v chars.
+      // UTF-16 in memory: ×2 bytes. Plus overhead.
+      const avgKeyLen = ("k_" + (n - 1)).length;
+      const bytesPerEntry = (avgKeyLen + v) * 2;
+      const totalBytes = n * bytesPerEntry;
+      const totalKB = (totalBytes / 1024).toFixed(1);
+      const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
+      const limitMB = 10;
+      let note = `Estimated data: ~${totalKB} KB (~${totalMB} MB)`;
+      if (totalBytes > limitMB * 1024 * 1024 * 0.9) {
+        note += " ⚠️ Approaching 10 MB per-origin limit!";
+      }
+      elDataSizeNote.textContent = note;
+    }
+
+    elNumEntries.addEventListener("change", estimateDataSize);
+    elValueSize.addEventListener("change", estimateDataSize);
+    estimateDataSize();
+
+    // --- Iframe management ---
+
+    function createIframe(src) {
+      const iframe = document.createElement("iframe");
+      iframe.src = src;
+      iframe.className = "hidden-iframe";
+      document.body.appendChild(iframe);
+      return iframe;
+    }
+
+    function removeIframe(iframe) {
+      if (iframe && iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    }
+
+    // Returns a promise that resolves with the first matching message from
+    // the iframe, or rejects on timeout.
+    function waitForMessage(expectedType, timeoutMs) {
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          window.removeEventListener("message", handler);
+          reject(new Error(`Timeout waiting for "${expectedType}" (${timeoutMs}ms)`));
+        }, timeoutMs || 60000);
+
+        function handler(event) {
+          if (event.data && event.data.type === expectedType) {
+            clearTimeout(timer);
+            window.removeEventListener("message", handler);
+            resolve(event.data);
+          }
+        }
+        window.addEventListener("message", handler);
+      });
+    }
+
+    // For populate progress, we listen continuously until done/error.
+    function listenForProgress(onProgress) {
+      function handler(event) {
+        if (event.data && event.data.type === "populate-progress") {
+          onProgress(event.data.current, event.data.total);
+        }
+      }
+      window.addEventListener("message", handler);
+      return () => window.removeEventListener("message", handler);
+    }
+
+    // --- Populate ---
+
+    btnPopulate.addEventListener("click", async () => {
+      disableAll();
+      showProgress(true);
+      setStatus("Populating localStorage...");
+
+      const numEntries = parseInt(elNumEntries.value);
+      const valueSize = parseInt(elValueSize.value);
+
+      const iframe = createIframe("worker.html");
+
+      // Wait for iframe to load before sending message.
+      await new Promise((resolve) => {
+        iframe.addEventListener("load", resolve, { once: true });
+      });
+
+      const stopProgress = listenForProgress((current, total) => {
+        const pct = Math.round((current / total) * 100);
+        setProgress(pct);
+        setStatus(`Populating localStorage... ${pct}% (${current}/${total})`);
+      });
+
+      // Race between done and error.
+      const donePromise = waitForMessage("populate-done", 300000);
+      const errorPromise = waitForMessage("populate-error", 300000);
+
+      iframe.contentWindow.postMessage(
+        { type: "populate", numEntries, valueSize },
+        "*"
+      );
+
+      try {
+        const result = await Promise.race([donePromise, errorPromise]);
+        if (result.type === "populate-error") {
+          setStatus(
+            `⚠️ Population stopped: ${result.error}. ` +
+            `Stored ${result.storedEntries} entries.`,
+            "error"
+          );
+          storedEntryCount = result.storedEntries;
+        } else {
+          setStatus(
+            `✓ Populated ${result.numEntries} entries ` +
+            `(value size: ${result.valueSize} bytes).`,
+            "success"
+          );
+          storedEntryCount = result.numEntries;
+        }
+        populated = storedEntryCount > 0;
+      } catch (e) {
+        setStatus("Error: " + e.message, "error");
+      } finally {
+        stopProgress();
+        removeIframe(iframe);
+        showProgress(false);
+        enableIdle();
+      }
+    });
+
+    // --- Benchmark ---
+
+    btnRun.addEventListener("click", async () => {
+      disableAll();
+      btnStop.disabled = false;
+      stopRequested = false;
+      durations.length = 0;
+      elLog.innerHTML = "";
+      elSummary.style.display = "none";
+
+      const totalIterations = parseInt(elIterations.value) || 20;
+      setStatus(`Running benchmark: 0/${totalIterations}...`);
+
+      for (let i = 0; i < totalIterations; i++) {
+        if (stopRequested) {
+          setStatus(`Stopped after ${i} iterations.`);
+          break;
+        }
+
+        setStatus(`Running benchmark: ${i + 1}/${totalIterations}...`);
+
+        try {
+          const duration = await runSingleMeasurement();
+          durations.push(duration);
+
+          const li = document.createElement("li");
+          li.textContent = `${duration.toFixed(3)} ms`;
+          elLog.appendChild(li);
+          // Auto-scroll to bottom.
+          elLog.scrollTop = elLog.scrollHeight;
+        } catch (e) {
+          const li = document.createElement("li");
+          li.textContent = `Error: ${e.message}`;
+          li.style.color = "#d93025";
+          elLog.appendChild(li);
+        }
+
+        // Small delay between iterations for cleanup.
+        await sleep(50);
+      }
+
+      if (durations.length > 0) {
+        showSummary();
+        setStatus(
+          `✓ Benchmark complete: ${durations.length} iterations.`,
+          "success"
+        );
+      }
+
+      enableIdle();
+    });
+
+    function runSingleMeasurement() {
+      return new Promise((resolve, reject) => {
+        const iframe = createIframe("worker.html?cmd=measure");
+        const timeout = setTimeout(() => {
+          window.removeEventListener("message", handler);
+          removeIframe(iframe);
+          reject(new Error("Measurement timed out (30s)"));
+        }, 30000);
+
+        function handler(event) {
+          if (event.data && event.data.type === "measure-result") {
+            clearTimeout(timeout);
+            window.removeEventListener("message", handler);
+            removeIframe(iframe);
+            resolve(event.data.duration);
+          } else if (event.data && event.data.type === "measure-error") {
+            clearTimeout(timeout);
+            window.removeEventListener("message", handler);
+            removeIframe(iframe);
+            reject(new Error(event.data.error));
+          }
+        }
+        window.addEventListener("message", handler);
+      });
+    }
+
+    // --- Stop ---
+
+    btnStop.addEventListener("click", () => {
+      stopRequested = true;
+      btnStop.disabled = true;
+    });
+
+    // --- Clear ---
+
+    btnClear.addEventListener("click", async () => {
+      disableAll();
+      setStatus("Clearing localStorage...");
+
+      const iframe = createIframe("worker.html");
+      await new Promise((resolve) => {
+        iframe.addEventListener("load", resolve, { once: true });
+      });
+
+      const done = waitForMessage("clear-done", 10000);
+      iframe.contentWindow.postMessage({ type: "clear" }, "*");
+
+      try {
+        await done;
+        populated = false;
+        storedEntryCount = 0;
+        durations.length = 0;
+        elLog.innerHTML = "";
+        elSummary.style.display = "none";
+        setStatus("✓ localStorage cleared.", "success");
+      } catch (e) {
+        setStatus("Error clearing: " + e.message, "error");
+      } finally {
+        removeIframe(iframe);
+        enableIdle();
+      }
+    });
+
+    // --- Summary stats ---
+
+    function showSummary() {
+      if (durations.length === 0) return;
+
+      const sorted = [...durations].sort((a, b) => a - b);
+      const min = sorted[0];
+      const max = sorted[sorted.length - 1];
+      const mean = durations.reduce((s, v) => s + v, 0) / durations.length;
+      const median =
+        sorted.length % 2 === 0
+          ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+          : sorted[Math.floor(sorted.length / 2)];
+      const variance =
+        durations.reduce((s, v) => s + (v - mean) ** 2, 0) / durations.length;
+      const stddev = Math.sqrt(variance);
+
+      document.getElementById("stat-entries").textContent = storedEntryCount;
+      document.getElementById("stat-iters").textContent = durations.length;
+      document.getElementById("stat-min").textContent = min.toFixed(3) + " ms";
+      document.getElementById("stat-max").textContent = max.toFixed(3) + " ms";
+      document.getElementById("stat-median").textContent =
+        median.toFixed(3) + " ms";
+      document.getElementById("stat-mean").textContent =
+        mean.toFixed(3) + " ms";
+      document.getElementById("stat-stddev").textContent =
+        stddev.toFixed(3) + " ms";
+      elSummary.style.display = "block";
+    }
+
+    // --- Copy results ---
+
+    btnCopy.addEventListener("click", () => {
+      const lines = [
+        `LocalStorage GetAll() Benchmark Results`,
+        `Entries: ${storedEntryCount}`,
+        `Value size: ${elValueSize.value} bytes`,
+        `Iterations: ${durations.length}`,
+        ``,
+        `Iteration\tDuration (ms)`,
+      ];
+      durations.forEach((d, i) => {
+        lines.push(`${i + 1}\t${d.toFixed(3)}`);
+      });
+      if (durations.length > 0) {
+        const sorted = [...durations].sort((a, b) => a - b);
+        const mean = durations.reduce((s, v) => s + v, 0) / durations.length;
+        const median =
+          sorted.length % 2 === 0
+            ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
+            : sorted[Math.floor(sorted.length / 2)];
+        lines.push(``);
+        lines.push(`Min: ${sorted[0].toFixed(3)} ms`);
+        lines.push(`Max: ${sorted[sorted.length - 1].toFixed(3)} ms`);
+        lines.push(`Median: ${median.toFixed(3)} ms`);
+        lines.push(`Mean: ${mean.toFixed(3)} ms`);
+      }
+
+      navigator.clipboard.writeText(lines.join("\n")).then(
+        () => setStatus("✓ Copied to clipboard!", "success"),
+        () => setStatus("Failed to copy to clipboard.", "error")
+      );
+    });
+
+    // --- Utility ---
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+  </script>
+</body>
+</html>
