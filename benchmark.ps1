@@ -65,15 +65,16 @@ function Launch-Edge {
     )
 
     $edgeArgs = @(
-        "--user-data-dir=$UserDataDir",
+        "--user-data-dir=`"$UserDataDir`"",
         "--remote-debugging-port=$CdpPort",
         "--no-first-run",
         "--no-default-browser-check",
         "--disable-extensions",
         "--disable-sync"
-    ) + $ExtraFlags + @($Url)
+    ) + $ExtraFlags + @("`"$Url`"")
 
-    $proc = Start-Process -FilePath $EdgePath -ArgumentList $edgeArgs -PassThru
+    $argString = $edgeArgs -join " "
+    $proc = Start-Process -FilePath $EdgePath -ArgumentList $argString -PassThru
     $script:EdgePid = $proc.Id
 }
 
