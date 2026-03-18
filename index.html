@@ -2,33 +2,62 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>LocalStorage GetAll() Performance Test</title>
+  <title>LocalStorage GetAll() Cold Read Benchmark</title>
+  <script>
+    // Auto-benchmark mode (?auto): measure cold GetAll() immediately, before
+    // any other code touches localStorage.
+    (function() {
+      if (new URLSearchParams(location.search).has("auto")) {
+        var t0 = performance.now();
+        var len = localStorage.length;
+        var t1 = performance.now();
+        window.__autoResult = { duration: t1 - t0, entries: len };
+        document.title =
+          "Cold GetAll: " + (t1 - t0).toFixed(3) + "ms (" + len + " entries)";
+      }
+    })();
+  </script>
   <style>
     * { box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
                    Helvetica, Arial, sans-serif;
-      max-width: 800px;
+      max-width: 820px;
       margin: 2rem auto;
       padding: 0 1rem;
       line-height: 1.5;
     }
     h1 { margin-bottom: 0.25rem; }
+    h2 { font-size: 1.1rem; margin-top: 0; }
     .subtitle { color: #666; margin-top: 0; }
-    fieldset {
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      padding: 1rem;
-      margin-bottom: 1rem;
+
+    .workflow {
+      background: #e8f0fe;
+      border: 1px solid #aecbfa;
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.5rem;
     }
-    legend { font-weight: bold; }
+    .workflow strong { display: block; margin-bottom: 0.25rem; }
+    .workflow ol { margin: 0; padding-left: 1.5rem; }
+    .workflow li { margin-bottom: 0.15rem; }
+
+    .phase {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .phase.highlight { border-color: #1a73e8; border-width: 2px; }
+
     label { display: inline-block; margin-right: 1.5rem; margin-bottom: 0.5rem; }
     select, input[type="number"] {
       padding: 4px 8px;
       border: 1px solid #aaa;
       border-radius: 3px;
     }
-    .btn-row { margin: 1rem 0; }
+    .data-size-note { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
+
     button {
       padding: 8px 16px;
       margin-right: 0.5rem;
@@ -45,15 +74,17 @@
     button.primary:hover:not(:disabled) { background: #1557b0; }
     button.danger { background: #d93025; color: #fff; border-color: #d93025; }
     button.danger:hover:not(:disabled) { background: #a50e0e; }
-    #status {
+    button.large { padding: 12px 28px; font-size: 1.1rem; }
+
+    .status-bar {
       padding: 0.75rem;
-      margin: 1rem 0;
+      margin: 0.75rem 0;
       border-radius: 4px;
       background: #f0f0f0;
       min-height: 2.5rem;
     }
-    #status.error { background: #fce8e6; color: #d93025; }
-    #status.success { background: #e6f4ea; color: #137333; }
+    .status-bar.error { background: #fce8e6; color: #d93025; }
+    .status-bar.success { background: #e6f4ea; color: #137333; }
     .progress-bar {
       width: 100%;
       height: 6px;
@@ -69,6 +100,25 @@
       width: 0%;
       transition: width 0.1s;
     }
+
+    .cold-result {
+      font-size: 2.5rem;
+      font-weight: bold;
+      font-family: "SF Mono", "Fira Mono", monospace;
+      color: #1a73e8;
+      margin: 0.5rem 0;
+    }
+    .cold-result .unit { font-size: 1rem; color: #666; font-weight: normal; }
+    .result-details { color: #555; margin-bottom: 0.75rem; }
+    .warning {
+      background: #fef7e0;
+      border: 1px solid #f9e3a0;
+      border-radius: 4px;
+      padding: 0.75rem;
+      margin: 0.75rem 0;
+      font-size: 0.9rem;
+    }
+
     #summary {
       background: #f8f9fa;
       border: 1px solid #ddd;
@@ -77,37 +127,40 @@
       margin: 1rem 0;
       display: none;
     }
-    #summary table { border-collapse: collapse; }
-    #summary td { padding: 2px 12px 2px 0; }
+    #summary table { border-collapse: collapse; width: 100%; }
+    #summary td { padding: 4px 12px 4px 0; }
     #summary td:last-child { font-weight: bold; font-family: monospace; }
-    ol#duration-log {
-      max-height: 400px;
-      overflow-y: auto;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      padding: 1rem 1rem 1rem 2.5rem;
-      margin: 0;
-      background: #fff;
-    }
-    ol#duration-log li { padding: 2px 0; font-family: monospace; }
-    .data-size-note { font-size: 0.85rem; color: #666; margin-top: 0.25rem; }
-    .hidden-iframe {
-      width: 0; height: 0; border: 0;
-      position: absolute; left: -9999px;
-    }
   </style>
 </head>
 <body>
-  <h1>LocalStorage GetAll() Performance Test</h1>
+  <h1>LocalStorage GetAll() Cold Read Benchmark</h1>
   <p class="subtitle">
-    Benchmarks the synchronous <code>GetAll()</code> Mojo IPC triggered on
-    first <code>localStorage</code> access. Compare SQLite vs LevelDB backends
-    by launching Chrome with <code>--enable-features=DomStorageSqlite</code> or
-    <code>--disable-features=DomStorageSqlite</code>.
+    Measures the synchronous <code>GetAll()</code> Mojo IPC that fires on the
+    first <code>localStorage</code> access after browser restart.
+    Compare <strong>SQLite</strong> vs <strong>LevelDB</strong> backends.
   </p>
 
-  <fieldset>
-    <legend>Configuration</legend>
+  <div class="workflow">
+    <strong>Cold-read workflow:</strong>
+    <ol>
+      <li><strong>Populate</strong> &mdash; write test entries to localStorage</li>
+      <li><strong>Close the browser</strong> &mdash; flushes all data to disk
+          and tears down in-memory caches</li>
+      <li><strong>Reopen the browser</strong> and navigate back to this page</li>
+      <li><strong>Measure</strong> &mdash; click the button to time the cold
+          <code>GetAll()</code> from disk</li>
+    </ol>
+    <div style="font-size:0.85rem; margin-top:0.5rem; color:#555;">
+      Tip: append <code>?auto</code> to the URL to measure automatically on
+      page load (useful for scripted multi-restart runs).
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Phase 1: Populate                                             -->
+  <!-- ============================================================ -->
+  <div class="phase" id="phase-populate">
+    <h2>Step 1 &mdash; Populate localStorage</h2>
 
     <label>
       Number of entries:
@@ -123,417 +176,260 @@
     <label>
       Value size:
       <select id="value-size">
-        <option value="10">Small (~10 bytes)</option>
-        <option value="100" selected>Medium (~100 bytes)</option>
-        <option value="1000">Large (~1,000 bytes)</option>
+        <option value="10">Small (~10 B)</option>
+        <option value="100" selected>Medium (~100 B)</option>
+        <option value="1000">Large (~1 KB)</option>
       </select>
     </label>
 
-    <label>
-      Iterations:
-      <input type="number" id="iterations" value="20" min="1" max="1000"
-             style="width: 5rem">
-    </label>
-
     <div class="data-size-note" id="data-size-note"></div>
-  </fieldset>
 
-  <div class="btn-row">
-    <button id="btn-populate" class="primary">Populate localStorage</button>
-    <button id="btn-run" class="primary" disabled>Run GetAll() Benchmark</button>
-    <button id="btn-clear" class="danger">Clear localStorage</button>
-    <button id="btn-stop" disabled>Stop</button>
+    <div style="margin-top: 0.75rem;">
+      <button id="btn-populate" class="primary">Populate localStorage</button>
+      <button id="btn-clear" class="danger">Clear localStorage</button>
+    </div>
+
+    <div class="status-bar" id="populate-status">
+      Ready. Configure and click Populate.
+    </div>
+    <div class="progress-bar" id="progress-bar">
+      <div class="progress-bar-fill" id="progress-fill"></div>
+    </div>
   </div>
 
-  <div id="status">Ready. Populate localStorage first, then run the benchmark.</div>
-  <div class="progress-bar" id="progress-bar">
-    <div class="progress-bar-fill" id="progress-fill"></div>
+  <!-- ============================================================ -->
+  <!-- Phase 2: Measure cold GetAll()                                -->
+  <!-- ============================================================ -->
+  <div class="phase highlight" id="phase-benchmark">
+    <h2>Step 4 &mdash; Measure Cold GetAll()</h2>
+    <p style="margin-top:0;">
+      This triggers the <strong>very first</strong>
+      <code>localStorage</code> access on this page, forcing a synchronous
+      <code>GetAll()</code> Mojo IPC that reads all entries from disk.
+    </p>
+
+    <button id="btn-measure" class="primary large">&#9654; Measure Cold GetAll()</button>
+
+    <div id="cold-result" style="display:none">
+      <div class="cold-result">
+        <span id="cold-duration">&mdash;</span>
+        <span class="unit">ms</span>
+      </div>
+      <div class="result-details" id="cold-details"></div>
+    </div>
+
+    <div id="warm-warning" class="warning" style="display:none">
+      &#9888;&#65039; localStorage was accessed earlier in this session (e.g. by
+      populate or clear). Both the renderer-side <code>CachedStorageArea</code>
+      and browser-side <code>StorageAreaImpl</code> caches are warm, so this is
+      <strong>not</strong> a true cold read. Close the browser and reopen for a
+      cold measurement.
+    </div>
   </div>
 
+  <!-- ============================================================ -->
+  <!-- Summary / copy                                                -->
+  <!-- ============================================================ -->
   <div id="summary">
-    <strong>Summary</strong>
+    <strong>Result</strong>
     <table>
-      <tr><td>Entries stored:</td><td id="stat-entries">—</td></tr>
-      <tr><td>Iterations:</td><td id="stat-iters">—</td></tr>
-      <tr><td>Min:</td><td id="stat-min">—</td></tr>
-      <tr><td>Max:</td><td id="stat-max">—</td></tr>
-      <tr><td>Median:</td><td id="stat-median">—</td></tr>
-      <tr><td>Mean:</td><td id="stat-mean">—</td></tr>
-      <tr><td>Std Dev:</td><td id="stat-stddev">—</td></tr>
+      <tr><td>GetAll() duration:</td><td id="stat-duration">&mdash;</td></tr>
+      <tr><td>Entries loaded:</td><td id="stat-entries">&mdash;</td></tr>
+      <tr><td>Read type:</td><td id="stat-type">&mdash;</td></tr>
     </table>
-    <button id="btn-copy" style="margin-top: 0.5rem">Copy Results to Clipboard</button>
+    <button id="btn-copy" style="margin-top:0.75rem">Copy Result to Clipboard</button>
   </div>
-
-  <h2>GetAll() Performance Log</h2>
-  <ol id="duration-log"></ol>
 
   <script>
     "use strict";
 
-    // --- DOM refs ---
-    const elNumEntries = document.getElementById("num-entries");
-    const elValueSize = document.getElementById("value-size");
-    const elIterations = document.getElementById("iterations");
+    // ----------------------------------------------------------------
+    // State
+    // ----------------------------------------------------------------
+    let coldReadDone = false;
+    let localStorageTouched = false;
+    let coldDuration = null;
+    let entryCount = 0;
+
+    // ----------------------------------------------------------------
+    // DOM refs
+    // ----------------------------------------------------------------
+    const elNumEntries   = document.getElementById("num-entries");
+    const elValueSize    = document.getElementById("value-size");
     const elDataSizeNote = document.getElementById("data-size-note");
-    const btnPopulate = document.getElementById("btn-populate");
-    const btnRun = document.getElementById("btn-run");
-    const btnClear = document.getElementById("btn-clear");
-    const btnStop = document.getElementById("btn-stop");
-    const elStatus = document.getElementById("status");
-    const elProgressBar = document.getElementById("progress-bar");
+    const btnPopulate    = document.getElementById("btn-populate");
+    const btnClear       = document.getElementById("btn-clear");
+    const elPopStatus    = document.getElementById("populate-status");
+    const elProgressBar  = document.getElementById("progress-bar");
     const elProgressFill = document.getElementById("progress-fill");
-    const elSummary = document.getElementById("summary");
-    const elLog = document.getElementById("duration-log");
-    const btnCopy = document.getElementById("btn-copy");
+    const btnMeasure     = document.getElementById("btn-measure");
+    const elColdResult   = document.getElementById("cold-result");
+    const elColdDuration = document.getElementById("cold-duration");
+    const elColdDetails  = document.getElementById("cold-details");
+    const elWarmWarning  = document.getElementById("warm-warning");
+    const elSummary      = document.getElementById("summary");
+    const btnCopy        = document.getElementById("btn-copy");
 
-    let stopRequested = false;
-    let populated = false;
-    let storedEntryCount = 0;
-    const durations = [];
-
-    // --- Helpers ---
-
-    function setStatus(msg, type) {
-      elStatus.textContent = msg;
-      elStatus.className = type || "";
+    // ----------------------------------------------------------------
+    // Auto-mode: pick up the result captured in <head>
+    // ----------------------------------------------------------------
+    if (window.__autoResult) {
+      coldReadDone = true;
+      coldDuration = window.__autoResult.duration;
+      entryCount   = window.__autoResult.entries;
+      showColdResult();
     }
 
-    function showProgress(visible) {
-      elProgressBar.style.display = visible ? "block" : "none";
-      if (!visible) elProgressFill.style.width = "0%";
-    }
-
-    function setProgress(pct) {
-      elProgressFill.style.width = pct + "%";
-    }
-
-    function disableAll() {
-      btnPopulate.disabled = true;
-      btnRun.disabled = true;
-      btnClear.disabled = true;
-      btnStop.disabled = true;
-    }
-
-    function enableIdle() {
-      btnPopulate.disabled = false;
-      btnRun.disabled = !populated;
-      btnClear.disabled = false;
-      btnStop.disabled = true;
-    }
-
+    // ----------------------------------------------------------------
+    // Data-size estimate
+    // ----------------------------------------------------------------
     function estimateDataSize() {
       const n = parseInt(elNumEntries.value);
       const v = parseInt(elValueSize.value);
-      // Key "k_NNNNN" ≈ 7 chars average, value = v chars.
-      // UTF-16 in memory: ×2 bytes. Plus overhead.
       const avgKeyLen = ("k_" + (n - 1)).length;
       const bytesPerEntry = (avgKeyLen + v) * 2;
       const totalBytes = n * bytesPerEntry;
       const totalKB = (totalBytes / 1024).toFixed(1);
-      const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
-      const limitMB = 10;
-      let note = `Estimated data: ~${totalKB} KB (~${totalMB} MB)`;
-      if (totalBytes > limitMB * 1024 * 1024 * 0.9) {
-        note += " ⚠️ Approaching 10 MB per-origin limit!";
+      let note = "Estimated data: ~" + totalKB + " KB";
+      if (totalBytes > 9 * 1024 * 1024) {
+        note += " \u26a0\ufe0f Approaching 10 MB per-origin limit!";
       }
       elDataSizeNote.textContent = note;
     }
-
     elNumEntries.addEventListener("change", estimateDataSize);
     elValueSize.addEventListener("change", estimateDataSize);
     estimateDataSize();
 
-    // --- Iframe management ---
-
-    function createIframe(src) {
-      const iframe = document.createElement("iframe");
-      iframe.src = src;
-      iframe.className = "hidden-iframe";
-      document.body.appendChild(iframe);
-      return iframe;
-    }
-
-    function removeIframe(iframe) {
-      if (iframe && iframe.parentNode) {
-        iframe.parentNode.removeChild(iframe);
-      }
-    }
-
-    // Returns a promise that resolves with the first matching message from
-    // the iframe, or rejects on timeout.
-    function waitForMessage(expectedType, timeoutMs) {
-      return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          window.removeEventListener("message", handler);
-          reject(new Error(`Timeout waiting for "${expectedType}" (${timeoutMs}ms)`));
-        }, timeoutMs || 60000);
-
-        function handler(event) {
-          if (event.data && event.data.type === expectedType) {
-            clearTimeout(timer);
-            window.removeEventListener("message", handler);
-            resolve(event.data);
-          }
-        }
-        window.addEventListener("message", handler);
-      });
-    }
-
-    // For populate progress, we listen continuously until done/error.
-    function listenForProgress(onProgress) {
-      function handler(event) {
-        if (event.data && event.data.type === "populate-progress") {
-          onProgress(event.data.current, event.data.total);
-        }
-      }
-      window.addEventListener("message", handler);
-      return () => window.removeEventListener("message", handler);
-    }
-
-    // --- Populate ---
-
-    btnPopulate.addEventListener("click", async () => {
-      disableAll();
-      showProgress(true);
-      setStatus("Populating localStorage...");
+    // ----------------------------------------------------------------
+    // Populate — writes directly, yields to UI via setTimeout batching
+    // ----------------------------------------------------------------
+    btnPopulate.addEventListener("click", () => {
+      btnPopulate.disabled = true;
+      btnClear.disabled = true;
+      elProgressBar.style.display = "block";
+      elPopStatus.textContent = "Populating\u2026";
+      elPopStatus.className = "status-bar";
 
       const numEntries = parseInt(elNumEntries.value);
-      const valueSize = parseInt(elValueSize.value);
+      const valueSize  = parseInt(elValueSize.value);
+      const value = "a".repeat(valueSize);
+      const batchSize = 200;
+      let i = 0;
 
-      const iframe = createIframe("worker.html");
+      localStorage.clear();
+      localStorageTouched = true;
 
-      // Wait for iframe to load before sending message.
-      await new Promise((resolve) => {
-        iframe.addEventListener("load", resolve, { once: true });
-      });
-
-      const stopProgress = listenForProgress((current, total) => {
-        const pct = Math.round((current / total) * 100);
-        setProgress(pct);
-        setStatus(`Populating localStorage... ${pct}% (${current}/${total})`);
-      });
-
-      // Race between done and error.
-      const donePromise = waitForMessage("populate-done", 300000);
-      const errorPromise = waitForMessage("populate-error", 300000);
-
-      iframe.contentWindow.postMessage(
-        { type: "populate", numEntries, valueSize },
-        "*"
-      );
-
-      try {
-        const result = await Promise.race([donePromise, errorPromise]);
-        if (result.type === "populate-error") {
-          setStatus(
-            `⚠️ Population stopped: ${result.error}. ` +
-            `Stored ${result.storedEntries} entries.`,
-            "error"
-          );
-          storedEntryCount = result.storedEntries;
-        } else {
-          setStatus(
-            `✓ Populated ${result.numEntries} entries ` +
-            `(value size: ${result.valueSize} bytes).`,
-            "success"
-          );
-          storedEntryCount = result.numEntries;
-        }
-        populated = storedEntryCount > 0;
-      } catch (e) {
-        setStatus("Error: " + e.message, "error");
-      } finally {
-        stopProgress();
-        removeIframe(iframe);
-        showProgress(false);
-        enableIdle();
-      }
-    });
-
-    // --- Benchmark ---
-
-    btnRun.addEventListener("click", async () => {
-      disableAll();
-      btnStop.disabled = false;
-      stopRequested = false;
-      durations.length = 0;
-      elLog.innerHTML = "";
-      elSummary.style.display = "none";
-
-      const totalIterations = parseInt(elIterations.value) || 20;
-      setStatus(`Running benchmark: 0/${totalIterations}...`);
-
-      for (let i = 0; i < totalIterations; i++) {
-        if (stopRequested) {
-          setStatus(`Stopped after ${i} iterations.`);
-          break;
-        }
-
-        setStatus(`Running benchmark: ${i + 1}/${totalIterations}...`);
-
+      function writeBatch() {
         try {
-          const duration = await runSingleMeasurement();
-          durations.push(duration);
-
-          const li = document.createElement("li");
-          li.textContent = `${duration.toFixed(3)} ms`;
-          elLog.appendChild(li);
-          // Auto-scroll to bottom.
-          elLog.scrollTop = elLog.scrollHeight;
-        } catch (e) {
-          const li = document.createElement("li");
-          li.textContent = `Error: ${e.message}`;
-          li.style.color = "#d93025";
-          elLog.appendChild(li);
-        }
-
-        // Small delay between iterations for cleanup.
-        await sleep(50);
-      }
-
-      if (durations.length > 0) {
-        showSummary();
-        setStatus(
-          `✓ Benchmark complete: ${durations.length} iterations.`,
-          "success"
-        );
-      }
-
-      enableIdle();
-    });
-
-    function runSingleMeasurement() {
-      return new Promise((resolve, reject) => {
-        const iframe = createIframe("worker.html?cmd=measure");
-        const timeout = setTimeout(() => {
-          window.removeEventListener("message", handler);
-          removeIframe(iframe);
-          reject(new Error("Measurement timed out (30s)"));
-        }, 30000);
-
-        function handler(event) {
-          if (event.data && event.data.type === "measure-result") {
-            clearTimeout(timeout);
-            window.removeEventListener("message", handler);
-            removeIframe(iframe);
-            resolve(event.data.duration);
-          } else if (event.data && event.data.type === "measure-error") {
-            clearTimeout(timeout);
-            window.removeEventListener("message", handler);
-            removeIframe(iframe);
-            reject(new Error(event.data.error));
+          const end = Math.min(i + batchSize, numEntries);
+          for (; i < end; i++) {
+            localStorage.setItem("k_" + i, value);
           }
+
+          const pct = Math.round((i / numEntries) * 100);
+          elProgressFill.style.width = pct + "%";
+          elPopStatus.textContent =
+            "Populating\u2026 " + pct + "% (" + i + "/" + numEntries + ")";
+
+          if (i < numEntries) {
+            setTimeout(writeBatch, 0);
+          } else {
+            elPopStatus.textContent =
+              "\u2714 Populated " + numEntries + " entries (" + valueSize +
+              " B each). Now close the browser to flush to disk, then reopen " +
+              "this page and click Measure.";
+            elPopStatus.className = "status-bar success";
+            finishPopulate();
+          }
+        } catch (e) {
+          elPopStatus.textContent =
+            "\u26a0\ufe0f Stopped: " + e.message +
+            ". Stored " + localStorage.length + " entries.";
+          elPopStatus.className = "status-bar error";
+          finishPopulate();
         }
-        window.addEventListener("message", handler);
-      });
-    }
-
-    // --- Stop ---
-
-    btnStop.addEventListener("click", () => {
-      stopRequested = true;
-      btnStop.disabled = true;
-    });
-
-    // --- Clear ---
-
-    btnClear.addEventListener("click", async () => {
-      disableAll();
-      setStatus("Clearing localStorage...");
-
-      const iframe = createIframe("worker.html");
-      await new Promise((resolve) => {
-        iframe.addEventListener("load", resolve, { once: true });
-      });
-
-      const done = waitForMessage("clear-done", 10000);
-      iframe.contentWindow.postMessage({ type: "clear" }, "*");
-
-      try {
-        await done;
-        populated = false;
-        storedEntryCount = 0;
-        durations.length = 0;
-        elLog.innerHTML = "";
-        elSummary.style.display = "none";
-        setStatus("✓ localStorage cleared.", "success");
-      } catch (e) {
-        setStatus("Error clearing: " + e.message, "error");
-      } finally {
-        removeIframe(iframe);
-        enableIdle();
       }
+
+      function finishPopulate() {
+        elProgressBar.style.display = "none";
+        elProgressFill.style.width = "0%";
+        btnPopulate.disabled = false;
+        btnClear.disabled = false;
+      }
+
+      setTimeout(writeBatch, 0);
     });
 
-    // --- Summary stats ---
+    // ----------------------------------------------------------------
+    // Clear
+    // ----------------------------------------------------------------
+    btnClear.addEventListener("click", () => {
+      localStorage.clear();
+      localStorageTouched = true;
+      elPopStatus.textContent = "\u2714 localStorage cleared.";
+      elPopStatus.className = "status-bar success";
+    });
 
-    function showSummary() {
-      if (durations.length === 0) return;
+    // ----------------------------------------------------------------
+    // Cold GetAll() measurement
+    // ----------------------------------------------------------------
+    btnMeasure.addEventListener("click", () => {
+      if (coldReadDone) return;
 
-      const sorted = [...durations].sort((a, b) => a - b);
-      const min = sorted[0];
-      const max = sorted[sorted.length - 1];
-      const mean = durations.reduce((s, v) => s + v, 0) / durations.length;
-      const median =
-        sorted.length % 2 === 0
-          ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-          : sorted[Math.floor(sorted.length / 2)];
-      const variance =
-        durations.reduce((s, v) => s + (v - mean) ** 2, 0) / durations.length;
-      const stddev = Math.sqrt(variance);
+      const t0  = performance.now();
+      const len = localStorage.length;
+      const t1  = performance.now();
 
-      document.getElementById("stat-entries").textContent = storedEntryCount;
-      document.getElementById("stat-iters").textContent = durations.length;
-      document.getElementById("stat-min").textContent = min.toFixed(3) + " ms";
-      document.getElementById("stat-max").textContent = max.toFixed(3) + " ms";
-      document.getElementById("stat-median").textContent =
-        median.toFixed(3) + " ms";
-      document.getElementById("stat-mean").textContent =
-        mean.toFixed(3) + " ms";
-      document.getElementById("stat-stddev").textContent =
-        stddev.toFixed(3) + " ms";
+      coldReadDone = true;
+      coldDuration = t1 - t0;
+      entryCount   = len;
+
+      showColdResult();
+    });
+
+    function showColdResult() {
+      elColdDuration.textContent = coldDuration.toFixed(3);
+      elColdDetails.textContent  =
+        entryCount + " entries loaded in " + coldDuration.toFixed(3) + " ms";
+      elColdResult.style.display = "block";
+
+      btnMeasure.disabled = true;
+      btnMeasure.textContent = "\u2714 Measured";
+
+      if (localStorageTouched) {
+        elWarmWarning.style.display = "block";
+      }
+
+      document.getElementById("stat-duration").textContent =
+        coldDuration.toFixed(3) + " ms";
+      document.getElementById("stat-entries").textContent = entryCount;
+      document.getElementById("stat-type").textContent =
+        localStorageTouched ? "Warm (caches hot)" : "Cold (from disk)";
       elSummary.style.display = "block";
     }
 
-    // --- Copy results ---
-
+    // ----------------------------------------------------------------
+    // Copy result
+    // ----------------------------------------------------------------
     btnCopy.addEventListener("click", () => {
       const lines = [
-        `LocalStorage GetAll() Benchmark Results`,
-        `Entries: ${storedEntryCount}`,
-        `Value size: ${elValueSize.value} bytes`,
-        `Iterations: ${durations.length}`,
-        ``,
-        `Iteration\tDuration (ms)`,
+        "LocalStorage GetAll() Cold Read Benchmark",
+        "Duration:  " + coldDuration.toFixed(3) + " ms",
+        "Entries:   " + entryCount,
+        "Read type: " + (localStorageTouched ? "warm" : "cold"),
+        "Timestamp: " + new Date().toISOString(),
       ];
-      durations.forEach((d, i) => {
-        lines.push(`${i + 1}\t${d.toFixed(3)}`);
-      });
-      if (durations.length > 0) {
-        const sorted = [...durations].sort((a, b) => a - b);
-        const mean = durations.reduce((s, v) => s + v, 0) / durations.length;
-        const median =
-          sorted.length % 2 === 0
-            ? (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
-            : sorted[Math.floor(sorted.length / 2)];
-        lines.push(``);
-        lines.push(`Min: ${sorted[0].toFixed(3)} ms`);
-        lines.push(`Max: ${sorted[sorted.length - 1].toFixed(3)} ms`);
-        lines.push(`Median: ${median.toFixed(3)} ms`);
-        lines.push(`Mean: ${mean.toFixed(3)} ms`);
-      }
-
       navigator.clipboard.writeText(lines.join("\n")).then(
-        () => setStatus("✓ Copied to clipboard!", "success"),
-        () => setStatus("Failed to copy to clipboard.", "error")
+        () => {
+          elPopStatus.textContent = "\u2714 Copied to clipboard!";
+          elPopStatus.className = "status-bar success";
+        },
+        () => {
+          elPopStatus.textContent = "Failed to copy to clipboard.";
+          elPopStatus.className = "status-bar error";
+        }
       );
     });
-
-    // --- Utility ---
-
-    function sleep(ms) {
-      return new Promise((resolve) => setTimeout(resolve, ms));
-    }
   </script>
 </body>
 </html>
