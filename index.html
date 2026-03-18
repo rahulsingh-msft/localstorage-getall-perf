@@ -3,20 +3,6 @@
 <head>
   <meta charset="utf-8">
   <title>LocalStorage GetAll() Cold Read Benchmark</title>
-  <script>
-    // Auto-benchmark mode (?auto): measure cold GetAll() immediately, before
-    // any other code touches localStorage.
-    (function() {
-      if (new URLSearchParams(location.search).has("auto")) {
-        var t0 = performance.now();
-        var len = localStorage.length;
-        var t1 = performance.now();
-        window.__autoResult = { duration: t1 - t0, entries: len };
-        document.title =
-          "Cold GetAll: " + (t1 - t0).toFixed(3) + "ms (" + len + " entries)";
-      }
-    })();
-  </script>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -85,22 +71,6 @@
     }
     .status-bar.error { background: #fce8e6; color: #d93025; }
     .status-bar.success { background: #e6f4ea; color: #137333; }
-    .progress-bar {
-      width: 100%;
-      height: 6px;
-      background: #ddd;
-      border-radius: 3px;
-      overflow: hidden;
-      margin-top: 0.5rem;
-      display: none;
-    }
-    .progress-bar-fill {
-      height: 100%;
-      background: #1a73e8;
-      width: 0%;
-      transition: width 0.1s;
-    }
-
     .cold-result {
       font-size: 2.5rem;
       font-weight: bold;
@@ -150,10 +120,6 @@
       <li><strong>Measure</strong> &mdash; click the button to time the cold
           <code>GetAll()</code> from disk</li>
     </ol>
-    <div style="font-size:0.85rem; margin-top:0.5rem; color:#555;">
-      Tip: append <code>?auto</code> to the URL to measure automatically on
-      page load (useful for scripted multi-restart runs).
-    </div>
   </div>
 
   <!-- ============================================================ -->
@@ -191,9 +157,6 @@
 
     <div class="status-bar" id="populate-status">
       Ready. Configure and click Populate.
-    </div>
-    <div class="progress-bar" id="progress-bar">
-      <div class="progress-bar-fill" id="progress-fill"></div>
     </div>
   </div>
 
@@ -260,8 +223,6 @@
     const btnPopulate    = document.getElementById("btn-populate");
     const btnClear       = document.getElementById("btn-clear");
     const elPopStatus    = document.getElementById("populate-status");
-    const elProgressBar  = document.getElementById("progress-bar");
-    const elProgressFill = document.getElementById("progress-fill");
     const btnMeasure     = document.getElementById("btn-measure");
     const elColdResult   = document.getElementById("cold-result");
     const elColdDuration = document.getElementById("cold-duration");
@@ -271,28 +232,21 @@
     const btnCopy        = document.getElementById("btn-copy");
 
     // ----------------------------------------------------------------
-    // Auto-mode: pick up the result captured in <head>
-    // ----------------------------------------------------------------
-    if (window.__autoResult) {
-      coldReadDone = true;
-      coldDuration = window.__autoResult.duration;
-      entryCount   = window.__autoResult.entries;
-      showColdResult();
-    }
-
-    // ----------------------------------------------------------------
     // Data-size estimate
+    // localStorage's 10 MB quota is measured in UTF-16 code units, so
+    // the limit is ~5M characters (each char = 2 bytes internally).
     // ----------------------------------------------------------------
     function estimateDataSize() {
       const n = parseInt(elNumEntries.value);
       const v = parseInt(elValueSize.value);
       const avgKeyLen = ("k_" + (n - 1)).length;
-      const bytesPerEntry = (avgKeyLen + v) * 2;
-      const totalBytes = n * bytesPerEntry;
-      const totalKB = (totalBytes / 1024).toFixed(1);
-      let note = "Estimated data: ~" + totalKB + " KB";
-      if (totalBytes > 9 * 1024 * 1024) {
-        note += " \u26a0\ufe0f Approaching 10 MB per-origin limit!";
+      const charsPerEntry = avgKeyLen + v;
+      const totalChars = n * charsPerEntry;
+      const totalKB = (totalChars / 1024).toFixed(1);
+      const limitChars = 5 * 1024 * 1024;
+      let note = "Estimated storage: ~" + totalKB + " K characters";
+      if (totalChars > limitChars * 0.9) {
+        note += " \u26a0\ufe0f Approaching ~5M character per-origin limit!";
       }
       elDataSizeNote.textContent = note;
     }
@@ -301,63 +255,39 @@
     estimateDataSize();
 
     // ----------------------------------------------------------------
-    // Populate — writes directly, yields to UI via setTimeout batching
+    // Populate
     // ----------------------------------------------------------------
     btnPopulate.addEventListener("click", () => {
       btnPopulate.disabled = true;
       btnClear.disabled = true;
-      elProgressBar.style.display = "block";
       elPopStatus.textContent = "Populating\u2026";
       elPopStatus.className = "status-bar";
 
       const numEntries = parseInt(elNumEntries.value);
       const valueSize  = parseInt(elValueSize.value);
       const value = "a".repeat(valueSize);
-      const batchSize = 200;
-      let i = 0;
 
-      localStorage.clear();
-      localStorageTouched = true;
-
-      function writeBatch() {
-        try {
-          const end = Math.min(i + batchSize, numEntries);
-          for (; i < end; i++) {
-            localStorage.setItem("k_" + i, value);
-          }
-
-          const pct = Math.round((i / numEntries) * 100);
-          elProgressFill.style.width = pct + "%";
-          elPopStatus.textContent =
-            "Populating\u2026 " + pct + "% (" + i + "/" + numEntries + ")";
-
-          if (i < numEntries) {
-            setTimeout(writeBatch, 0);
-          } else {
-            elPopStatus.textContent =
-              "\u2714 Populated " + numEntries + " entries (" + valueSize +
-              " B each). Now close the browser to flush to disk, then reopen " +
-              "this page and click Measure.";
-            elPopStatus.className = "status-bar success";
-            finishPopulate();
-          }
-        } catch (e) {
-          elPopStatus.textContent =
-            "\u26a0\ufe0f Stopped: " + e.message +
-            ". Stored " + localStorage.length + " entries.";
-          elPopStatus.className = "status-bar error";
-          finishPopulate();
+      try {
+        localStorage.clear();
+        for (let i = 0; i < numEntries; i++) {
+          localStorage.setItem("k_" + i, value);
         }
-      }
-
-      function finishPopulate() {
-        elProgressBar.style.display = "none";
-        elProgressFill.style.width = "0%";
+        localStorageTouched = true;
+        elPopStatus.textContent =
+          "\u2714 Populated " + numEntries + " entries (" + valueSize +
+          " chars each). Now close the browser to flush to disk, then " +
+          "reopen this page and click Measure.";
+        elPopStatus.className = "status-bar success";
+      } catch (e) {
+        localStorageTouched = true;
+        elPopStatus.textContent =
+          "\u26a0\ufe0f Stopped: " + e.message +
+          ". Stored " + localStorage.length + " entries.";
+        elPopStatus.className = "status-bar error";
+      } finally {
         btnPopulate.disabled = false;
         btnClear.disabled = false;
       }
-
-      setTimeout(writeBatch, 0);
     });
 
     // ----------------------------------------------------------------

@@ -60,23 +60,14 @@ chrome --disable-features=DomStorageSqlite \
 4. **Measure** — click *Measure Cold GetAll()* to time the first
    `localStorage` access (the cold `GetAll()` from disk)
 
-### 4. Auto-benchmark mode
-
-Append `?auto` to measure immediately on page load without clicking:
-
-```
-http://localhost:8080?auto
-```
-
-The result is written to `document.title` for easy scraping in automated runs.
-
 ## Architecture notes
 
 - **No iframes** — the page reads and writes `localStorage` directly.
   Since a browser restart is required between populate and measure, there is no
   need to isolate contexts.
-- **Populate batches** writes in chunks of 200 entries via `setTimeout(0)` to
-  keep the UI responsive during large fills.
 - **Cold vs warm detection** — if you populate and then measure without
   restarting, the page flags the result as *warm* since both the renderer-side
   `CachedStorageArea` and browser-side `StorageAreaImpl` caches are hot.
+- **Quota** — the Web Storage spec allows ~10 MB per origin, stored as UTF-16
+  internally, giving a practical limit of ~5 million characters across all
+  keys and values.
