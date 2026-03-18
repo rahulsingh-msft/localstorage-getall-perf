@@ -47,7 +47,9 @@ $ErrorActionPreference = "Stop"
 # Helpers
 # ---------------------------------------------------------------
 function Kill-Edge {
-    # Wait a moment, then kill all Edge processes from our user-data-dir.
+    # NOTE: This kills ALL msedge.exe processes. There is no reliable way to
+    # kill only the processes from a specific --user-data-dir since Edge spawns
+    # many child processes. Close other Edge windows before running this script.
     Start-Sleep -Seconds 2
     Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
@@ -60,7 +62,7 @@ function Launch-Edge {
         [string[]]$ExtraFlags = @()
     )
 
-    $args = @(
+    $edgeArgs = @(
         "--user-data-dir=$UserDataDir",
         "--remote-debugging-port=$CdpPort",
         "--no-first-run",
@@ -69,7 +71,7 @@ function Launch-Edge {
         "--disable-sync"
     ) + $ExtraFlags + @($Url)
 
-    Start-Process -FilePath $EdgePath -ArgumentList $args
+    Start-Process -FilePath $EdgePath -ArgumentList $edgeArgs
 }
 
 function Get-CdpTitle {
@@ -217,6 +219,15 @@ if (-not (Test-Path $EdgePath)) {
     Write-Host "ERROR: Edge not found at $EdgePath" -ForegroundColor Red
     Write-Host "Set -EdgePath to your msedge.exe location." -ForegroundColor Yellow
     exit 1
+}
+
+# Warn about killing Edge.
+Write-Host "WARNING: This script will kill ALL running Edge processes." -ForegroundColor Yellow
+Write-Host "Close any Edge windows you want to keep before proceeding." -ForegroundColor Yellow
+$confirm = Read-Host "Continue? (y/n)"
+if ($confirm -ne "y") {
+    Write-Host "Aborted." -ForegroundColor Red
+    exit 0
 }
 
 # Kill any existing Edge instances.

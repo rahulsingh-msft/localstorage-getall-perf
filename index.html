@@ -39,7 +39,6 @@
           var t1 = performance.now();
           var dur = t1 - t0;
           document.title = "RESULT:" + dur.toFixed(3) + ":" + len;
-          window.__autoResult = { duration: dur, entries: len };
         }, delay);
         return;
       }
