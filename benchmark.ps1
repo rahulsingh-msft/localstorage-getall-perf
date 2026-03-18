@@ -222,13 +222,8 @@ if (-not (Test-Path $EdgePath)) {
 }
 
 # Warn about killing Edge.
-Write-Host "WARNING: This script will kill ALL running Edge processes." -ForegroundColor Yellow
-Write-Host "Close any Edge windows you want to keep before proceeding." -ForegroundColor Yellow
-$confirm = Read-Host "Continue? (y/n)"
-if ($confirm -ne "y") {
-    Write-Host "Aborted." -ForegroundColor Red
-    exit 0
-}
+Write-Host "NOTE: This script will kill ALL running Edge processes between runs." -ForegroundColor Yellow
+Write-Host ""
 
 # Kill any existing Edge instances.
 Kill-Edge
