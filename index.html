@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>LocalStorage GetAll() Cold Read Benchmark</title>
+  <title>LocalStorage First Read Benchmark</title>
   <style>
     * { box-sizing: border-box; }
     body {
@@ -71,14 +71,15 @@
     }
     .status-bar.error { background: #fce8e6; color: #d93025; }
     .status-bar.success { background: #e6f4ea; color: #137333; }
-    .cold-result {
+
+    .result-display {
       font-size: 2.5rem;
       font-weight: bold;
       font-family: "SF Mono", "Fira Mono", monospace;
       color: #1a73e8;
       margin: 0.5rem 0;
     }
-    .cold-result .unit { font-size: 1rem; color: #666; font-weight: normal; }
+    .result-display .unit { font-size: 1rem; color: #666; font-weight: normal; }
     .result-details { color: #555; margin-bottom: 0.75rem; }
     .warning {
       background: #fef7e0;
@@ -103,29 +104,27 @@
   </style>
 </head>
 <body>
-  <h1>LocalStorage GetAll() Cold Read Benchmark</h1>
+  <h1>LocalStorage First Read Benchmark</h1>
   <p class="subtitle">
-    Measures the synchronous <code>GetAll()</code> Mojo IPC that fires on the
-    first <code>localStorage</code> access after browser restart.
+    Measures the first access time for the localStorage backend in a fresh
+    browser instance.
   </p>
 
   <div class="workflow">
-    <strong>Cold-read workflow:</strong>
+    <strong>Benchmark workflow:</strong>
     <ol>
       <li><strong>Populate</strong> &mdash; write test entries to localStorage</li>
-      <li><strong>Close the browser</strong> &mdash; flushes all data to disk
-          and tears down in-memory caches</li>
+      <li><strong>Close the browser</strong> &mdash; ensures data is persisted to disk</li>
       <li><strong>Reopen the browser</strong> and navigate back to this page</li>
-      <li><strong>Measure</strong> &mdash; click the button to time the cold
-          <code>GetAll()</code> from disk</li>
+      <li><strong>Measure</strong> &mdash; time the first localStorage read</li>
     </ol>
   </div>
 
   <!-- ============================================================ -->
-  <!-- Phase 1: Populate                                             -->
+  <!-- Populate                                                      -->
   <!-- ============================================================ -->
   <div class="phase" id="phase-populate">
-    <h2>Step 1 &mdash; Populate localStorage</h2>
+    <h2>Populate localStorage</h2>
 
     <label>
       Number of entries:
@@ -141,51 +140,56 @@
     <label>
       Value size:
       <select id="value-size">
-        <option value="10">Small (~10 B)</option>
-        <option value="100" selected>Medium (~100 B)</option>
-        <option value="1000">Large (~1 KB)</option>
+        <option value="10">Small (~10 chars)</option>
+        <option value="100" selected>Medium (~100 chars)</option>
+        <option value="1000">Large (~1,000 chars)</option>
       </select>
     </label>
 
     <div class="data-size-note" id="data-size-note"></div>
 
     <div style="margin-top: 0.75rem;">
-      <button id="btn-populate" class="primary">Populate localStorage</button>
-      <button id="btn-clear" class="danger">Clear localStorage</button>
+      <button id="btn-populate" class="primary">Populate</button>
+      <button id="btn-clear" class="danger">Clear</button>
     </div>
 
-    <div class="status-bar" id="populate-status">
-      Ready. Configure and click Populate.
-    </div>
+    <div class="status-bar" id="populate-status">Ready.</div>
   </div>
 
   <!-- ============================================================ -->
-  <!-- Phase 2: Measure cold GetAll()                                -->
+  <!-- Measure                                                       -->
   <!-- ============================================================ -->
   <div class="phase highlight" id="phase-benchmark">
-    <h2>Step 4 &mdash; Measure Cold GetAll()</h2>
-    <p style="margin-top:0;">
-      This triggers the <strong>very first</strong>
-      <code>localStorage</code> access on this page, forcing a synchronous
-      <code>GetAll()</code> Mojo IPC that reads all entries from disk.
-    </p>
+    <h2>Run First Access Benchmark</h2>
 
-    <button id="btn-measure" class="primary large">&#9654; Measure Cold GetAll()</button>
+    <label>
+      Delay before read:
+      <select id="read-delay">
+        <option value="0" selected>None</option>
+        <option value="3000">3 seconds</option>
+        <option value="5000">5 seconds</option>
+        <option value="10000">10 seconds</option>
+        <option value="15000">15 seconds</option>
+      </select>
+    </label>
 
-    <div id="cold-result" style="display:none">
-      <div class="cold-result">
-        <span id="cold-duration">&mdash;</span>
+    <div style="margin-top: 0.75rem;">
+      <button id="btn-measure" class="primary large">&#9654; Measure</button>
+    </div>
+
+    <div id="countdown" class="status-bar" style="display:none"></div>
+
+    <div id="result" style="display:none">
+      <div class="result-display">
+        <span id="result-duration">&mdash;</span>
         <span class="unit">ms</span>
       </div>
-      <div class="result-details" id="cold-details"></div>
+      <div class="result-details" id="result-details"></div>
     </div>
 
     <div id="warm-warning" class="warning" style="display:none">
-      &#9888;&#65039; localStorage was accessed earlier in this session (e.g. by
-      populate or clear). Both the renderer-side <code>CachedStorageArea</code>
-      and browser-side <code>StorageAreaImpl</code> caches are warm, so this is
-      <strong>not</strong> a true cold read. Close the browser and reopen for a
-      cold measurement.
+      &#9888;&#65039; localStorage was already accessed in this session.
+      Close and reopen the browser for a clean first-read measurement.
     </div>
   </div>
 
@@ -195,11 +199,11 @@
   <div id="summary">
     <strong>Result</strong>
     <table>
-      <tr><td>GetAll() duration:</td><td id="stat-duration">&mdash;</td></tr>
-      <tr><td>Entries loaded:</td><td id="stat-entries">&mdash;</td></tr>
+      <tr><td>First read duration:</td><td id="stat-duration">&mdash;</td></tr>
+      <tr><td>Entries:</td><td id="stat-entries">&mdash;</td></tr>
       <tr><td>Read type:</td><td id="stat-type">&mdash;</td></tr>
     </table>
-    <button id="btn-copy" style="margin-top:0.75rem">Copy Result to Clipboard</button>
+    <button id="btn-copy" style="margin-top:0.75rem">Copy to Clipboard</button>
   </div>
 
   <script>
@@ -208,32 +212,34 @@
     // ----------------------------------------------------------------
     // State
     // ----------------------------------------------------------------
-    let coldReadDone = false;
+    let measureDone = false;
     let localStorageTouched = false;
-    let coldDuration = null;
+    let resultDuration = null;
     let entryCount = 0;
 
     // ----------------------------------------------------------------
     // DOM refs
     // ----------------------------------------------------------------
-    const elNumEntries   = document.getElementById("num-entries");
-    const elValueSize    = document.getElementById("value-size");
-    const elDataSizeNote = document.getElementById("data-size-note");
-    const btnPopulate    = document.getElementById("btn-populate");
-    const btnClear       = document.getElementById("btn-clear");
-    const elPopStatus    = document.getElementById("populate-status");
-    const btnMeasure     = document.getElementById("btn-measure");
-    const elColdResult   = document.getElementById("cold-result");
-    const elColdDuration = document.getElementById("cold-duration");
-    const elColdDetails  = document.getElementById("cold-details");
-    const elWarmWarning  = document.getElementById("warm-warning");
-    const elSummary      = document.getElementById("summary");
-    const btnCopy        = document.getElementById("btn-copy");
+    const elNumEntries    = document.getElementById("num-entries");
+    const elValueSize     = document.getElementById("value-size");
+    const elDataSizeNote  = document.getElementById("data-size-note");
+    const btnPopulate     = document.getElementById("btn-populate");
+    const btnClear        = document.getElementById("btn-clear");
+    const elPopStatus     = document.getElementById("populate-status");
+    const elReadDelay     = document.getElementById("read-delay");
+    const btnMeasure      = document.getElementById("btn-measure");
+    const elCountdown     = document.getElementById("countdown");
+    const elResult        = document.getElementById("result");
+    const elResultDuration = document.getElementById("result-duration");
+    const elResultDetails = document.getElementById("result-details");
+    const elWarmWarning   = document.getElementById("warm-warning");
+    const elSummary       = document.getElementById("summary");
+    const btnCopy         = document.getElementById("btn-copy");
 
     // ----------------------------------------------------------------
     // Data-size estimate
-    // localStorage's 10 MB quota is measured in UTF-16 code units, so
-    // the limit is ~5M characters (each char = 2 bytes internally).
+    // localStorage quota is ~5M characters per origin (stored as
+    // UTF-16 internally, so ~10 MB on disk).
     // ----------------------------------------------------------------
     function estimateDataSize() {
       const n = parseInt(elNumEntries.value);
@@ -274,14 +280,13 @@
         localStorageTouched = true;
         elPopStatus.textContent =
           "\u2714 Populated " + numEntries + " entries (" + valueSize +
-          " chars each). Now close the browser to flush to disk, then " +
-          "reopen this page and click Measure.";
+          " chars each). Close the browser and reopen this page to measure.";
         elPopStatus.className = "status-bar success";
       } catch (e) {
         localStorageTouched = true;
         elPopStatus.textContent =
-          "\u26a0\ufe0f Stopped: " + e.message +
-          ". Stored " + localStorage.length + " entries.";
+          "\u26a0\ufe0f " + e.message +
+          " \u2014 stored " + localStorage.length + " entries.";
         elPopStatus.className = "status-bar error";
       } finally {
         btnPopulate.disabled = false;
@@ -300,27 +305,54 @@
     });
 
     // ----------------------------------------------------------------
-    // Cold GetAll() measurement
+    // Measure first localStorage access
     // ----------------------------------------------------------------
     btnMeasure.addEventListener("click", () => {
-      if (coldReadDone) return;
+      if (measureDone) return;
 
+      const delay = parseInt(elReadDelay.value) || 0;
+
+      if (delay > 0) {
+        btnMeasure.disabled = true;
+        elCountdown.style.display = "block";
+        let remaining = delay;
+
+        const tick = setInterval(() => {
+          remaining -= 1000;
+          if (remaining <= 0) {
+            clearInterval(tick);
+            elCountdown.style.display = "none";
+            doMeasure();
+          } else {
+            elCountdown.textContent =
+              "Reading in " + (remaining / 1000) + "s\u2026";
+          }
+        }, 1000);
+
+        elCountdown.textContent =
+          "Reading in " + (delay / 1000) + "s\u2026";
+      } else {
+        doMeasure();
+      }
+    });
+
+    function doMeasure() {
       const t0  = performance.now();
       const len = localStorage.length;
       const t1  = performance.now();
 
-      coldReadDone = true;
-      coldDuration = t1 - t0;
-      entryCount   = len;
+      measureDone = true;
+      resultDuration = t1 - t0;
+      entryCount = len;
 
-      showColdResult();
-    });
+      showResult();
+    }
 
-    function showColdResult() {
-      elColdDuration.textContent = coldDuration.toFixed(3);
-      elColdDetails.textContent  =
-        entryCount + " entries loaded in " + coldDuration.toFixed(3) + " ms";
-      elColdResult.style.display = "block";
+    function showResult() {
+      elResultDuration.textContent = resultDuration.toFixed(3);
+      elResultDetails.textContent =
+        entryCount + " entries \u00b7 " + resultDuration.toFixed(3) + " ms";
+      elResult.style.display = "block";
 
       btnMeasure.disabled = true;
       btnMeasure.textContent = "\u2714 Measured";
@@ -330,10 +362,10 @@
       }
 
       document.getElementById("stat-duration").textContent =
-        coldDuration.toFixed(3) + " ms";
+        resultDuration.toFixed(3) + " ms";
       document.getElementById("stat-entries").textContent = entryCount;
       document.getElementById("stat-type").textContent =
-        localStorageTouched ? "Warm (caches hot)" : "Cold (from disk)";
+        localStorageTouched ? "Warm (cached)" : "Cold (from disk)";
       elSummary.style.display = "block";
     }
 
@@ -342,8 +374,8 @@
     // ----------------------------------------------------------------
     btnCopy.addEventListener("click", () => {
       const lines = [
-        "LocalStorage GetAll() Cold Read Benchmark",
-        "Duration:  " + coldDuration.toFixed(3) + " ms",
+        "LocalStorage First Read Benchmark",
+        "Duration:  " + resultDuration.toFixed(3) + " ms",
         "Entries:   " + entryCount,
         "Read type: " + (localStorageTouched ? "warm" : "cold"),
         "Timestamp: " + new Date().toISOString(),
