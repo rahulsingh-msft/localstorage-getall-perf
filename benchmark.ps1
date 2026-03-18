@@ -53,8 +53,10 @@ function Stop-EdgeTree {
     if ($script:EdgePid) {
         taskkill /T /F /PID $script:EdgePid 2>$null | Out-Null
         $script:EdgePid = $null
-        Start-Sleep -Seconds 2
     }
+    # Also catch any orphaned Edge processes using our CDP port.
+    Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 3
 }
 
 function Launch-Edge {
@@ -120,9 +122,18 @@ function Run-Backend {
     Write-Host " Backend: $Name" -ForegroundColor Cyan
     Write-Host "=============================================" -ForegroundColor Cyan
 
-    # Clean user data dir for a fresh start.
+    # Clean user data dir for a fresh start. Retry a few times in case
+    # file locks from Edge processes haven't fully released.
     if (Test-Path $UserDataDir) {
-        Remove-Item -Recurse -Force $UserDataDir
+        for ($attempt = 1; $attempt -le 5; $attempt++) {
+            try {
+                Remove-Item -Recurse -Force $UserDataDir -ErrorAction Stop
+                break
+            } catch {
+                if ($attempt -eq 5) { throw }
+                Start-Sleep -Seconds 2
+            }
+        }
     }
 
     # --- Populate ---
