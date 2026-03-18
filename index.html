@@ -3,6 +3,48 @@
 <head>
   <meta charset="utf-8">
   <title>LocalStorage First Read Benchmark</title>
+  <script>
+    // URL-driven automation modes (runs before DOM is ready):
+    //
+    //   ?populate=10000&valueSize=100
+    //     Writes entries to localStorage, sets document.title to
+    //     "POPULATED:<count>" when done.
+    //
+    //   ?auto&delay=5000
+    //     Waits <delay> ms (default 5000), then reads localStorage.length
+    //     to trigger the first access. Sets document.title to
+    //     "RESULT:<duration_ms>:<entry_count>".
+    (function() {
+      var params = new URLSearchParams(location.search);
+
+      if (params.has("populate")) {
+        var n = parseInt(params.get("populate")) || 1000;
+        var v = parseInt(params.get("valueSize")) || 100;
+        var val = "a".repeat(v);
+        try {
+          localStorage.clear();
+          for (var i = 0; i < n; i++) localStorage.setItem("k_" + i, val);
+          document.title = "POPULATED:" + localStorage.length;
+        } catch (e) {
+          document.title = "POPULATED:" + localStorage.length;
+        }
+        return;
+      }
+
+      if (params.has("auto")) {
+        var delay = parseInt(params.get("delay")) || 5000;
+        setTimeout(function() {
+          var t0 = performance.now();
+          var len = localStorage.length;
+          var t1 = performance.now();
+          var dur = t1 - t0;
+          document.title = "RESULT:" + dur.toFixed(3) + ":" + len;
+          window.__autoResult = { duration: dur, entries: len };
+        }, delay);
+        return;
+      }
+    })();
+  </script>
   <style>
     * { box-sizing: border-box; }
     body {
