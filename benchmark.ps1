@@ -46,13 +46,15 @@ $ErrorActionPreference = "Stop"
 # ---------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------
-function Kill-Edge {
-    # NOTE: This kills ALL msedge.exe processes. There is no reliable way to
-    # kill only the processes from a specific --user-data-dir since Edge spawns
-    # many child processes. Close other Edge windows before running this script.
-    Start-Sleep -Seconds 2
-    Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Seconds 2
+# Tracks the PID of the most recently launched Edge process tree.
+$script:EdgePid = $null
+
+function Stop-EdgeTree {
+    if ($script:EdgePid) {
+        taskkill /T /F /PID $script:EdgePid 2>$null | Out-Null
+        $script:EdgePid = $null
+        Start-Sleep -Seconds 2
+    }
 }
 
 function Launch-Edge {
@@ -71,7 +73,8 @@ function Launch-Edge {
         "--disable-sync"
     ) + $ExtraFlags + @($Url)
 
-    Start-Process -FilePath $EdgePath -ArgumentList $edgeArgs
+    $proc = Start-Process -FilePath $EdgePath -ArgumentList $edgeArgs -PassThru
+    $script:EdgePid = $proc.Id
 }
 
 function Get-CdpTitle {
@@ -135,11 +138,11 @@ function Run-Backend {
         }
     } catch {
         Write-Host "  ERROR during populate: $_" -ForegroundColor Red
-        Kill-Edge
+        Stop-EdgeTree
         return @()
     }
 
-    Kill-Edge
+    Stop-EdgeTree
 
     # --- Measure cold reads ---
     $results = @()
@@ -164,7 +167,7 @@ function Run-Backend {
             Write-Host "ERROR: $_" -ForegroundColor Red
         }
 
-        Kill-Edge
+        Stop-EdgeTree
     }
 
     return $results
@@ -221,12 +224,8 @@ if (-not (Test-Path $EdgePath)) {
     exit 1
 }
 
-# Warn about killing Edge.
-Write-Host "NOTE: This script will kill ALL running Edge processes between runs." -ForegroundColor Yellow
-Write-Host ""
-
-# Kill any existing Edge instances.
-Kill-Edge
+# Ensure no leftover Edge from a previous run.
+Stop-EdgeTree
 
 # Run LevelDB (default backend).
 $leveldbResults = Run-Backend -Name "LevelDB" `
