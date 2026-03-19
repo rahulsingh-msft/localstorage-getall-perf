@@ -261,21 +261,36 @@
     // ----------------------------------------------------------------
     // DOM refs
     // ----------------------------------------------------------------
-    const elNumEntries    = document.getElementById("num-entries");
-    const elValueSize     = document.getElementById("value-size");
-    const elDataSizeNote  = document.getElementById("data-size-note");
-    const btnPopulate     = document.getElementById("btn-populate");
-    const btnClear        = document.getElementById("btn-clear");
-    const elPopStatus     = document.getElementById("populate-status");
-    const elReadDelay     = document.getElementById("read-delay");
-    const btnMeasure      = document.getElementById("btn-measure");
-    const elCountdown     = document.getElementById("countdown");
-    const elResult        = document.getElementById("result");
-    const elResultDuration = document.getElementById("result-duration");
-    const elResultDetails = document.getElementById("result-details");
-    const elWarmWarning   = document.getElementById("warm-warning");
-    const elSummary       = document.getElementById("summary");
-    const btnCopy         = document.getElementById("btn-copy");
+    const $ = (id) => document.getElementById(id);
+
+    const elNumEntries     = $("num-entries");
+    const elValueSize      = $("value-size");
+    const elDataSizeNote   = $("data-size-note");
+    const btnPopulate      = $("btn-populate");
+    const btnClear         = $("btn-clear");
+    const elPopStatus      = $("populate-status");
+    const elReadDelay      = $("read-delay");
+    const btnMeasure       = $("btn-measure");
+    const elCountdown      = $("countdown");
+    const elResult         = $("result");
+    const elResultDuration = $("result-duration");
+    const elResultDetails  = $("result-details");
+    const elWarmWarning    = $("warm-warning");
+    const elSummary        = $("summary");
+    const elStatDuration   = $("stat-duration");
+    const elStatEntries    = $("stat-entries");
+    const elStatType       = $("stat-type");
+    const btnCopy          = $("btn-copy");
+
+    // ----------------------------------------------------------------
+    // Helpers
+    // ----------------------------------------------------------------
+    const CHAR_LIMIT = 5 * 1024 * 1024;
+
+    function setStatus(el, text, type) {
+      el.textContent = text;
+      el.className = type ? `status-bar ${type}` : "status-bar";
+    }
 
     // ----------------------------------------------------------------
     // Data-size estimate
@@ -283,15 +298,13 @@
     // UTF-16 internally, so ~10 MB on disk).
     // ----------------------------------------------------------------
     function estimateDataSize() {
-      const n = parseInt(elNumEntries.value);
-      const v = parseInt(elValueSize.value);
-      const avgKeyLen = ("k_" + (n - 1)).length;
-      const charsPerEntry = avgKeyLen + v;
+      const n = parseInt(elNumEntries.value, 10);
+      const v = parseInt(elValueSize.value, 10);
+      const charsPerEntry = `k_${n - 1}`.length + v;
       const totalChars = n * charsPerEntry;
       const totalKB = (totalChars / 1024).toFixed(1);
-      const limitChars = 5 * 1024 * 1024;
-      let note = "Estimated storage: ~" + totalKB + " K characters";
-      if (totalChars > limitChars * 0.9) {
+      let note = `Estimated storage: ~${totalKB} K characters`;
+      if (totalChars > CHAR_LIMIT * 0.9) {
         note += " \u26a0\ufe0f Approaching ~5M character per-origin limit!";
       }
       elDataSizeNote.textContent = note;
@@ -306,29 +319,27 @@
     btnPopulate.addEventListener("click", () => {
       btnPopulate.disabled = true;
       btnClear.disabled = true;
-      elPopStatus.textContent = "Populating\u2026";
-      elPopStatus.className = "status-bar";
+      setStatus(elPopStatus, "Populating\u2026");
 
-      const numEntries = parseInt(elNumEntries.value);
-      const valueSize  = parseInt(elValueSize.value);
+      const numEntries = parseInt(elNumEntries.value, 10);
+      const valueSize  = parseInt(elValueSize.value, 10);
       const value = "a".repeat(valueSize);
 
       try {
         localStorage.clear();
         for (let i = 0; i < numEntries; i++) {
-          localStorage.setItem("k_" + i, value);
+          localStorage.setItem(`k_${i}`, value);
         }
         localStorageTouched = true;
-        elPopStatus.textContent =
-          "\u2714 Populated " + numEntries + " entries (" + valueSize +
-          " chars each). Close the browser and reopen this page to measure.";
-        elPopStatus.className = "status-bar success";
+        setStatus(elPopStatus,
+          `\u2714 Populated ${numEntries} entries (${valueSize} chars each). ` +
+          `Close the browser and reopen this page to measure.`,
+          "success");
       } catch (e) {
         localStorageTouched = true;
-        elPopStatus.textContent =
-          "\u26a0\ufe0f " + e.message +
-          " \u2014 stored " + localStorage.length + " entries.";
-        elPopStatus.className = "status-bar error";
+        setStatus(elPopStatus,
+          `\u26a0\ufe0f ${e.message} \u2014 stored ${localStorage.length} entries.`,
+          "error");
       } finally {
         btnPopulate.disabled = false;
         btnClear.disabled = false;
@@ -341,8 +352,7 @@
     btnClear.addEventListener("click", () => {
       localStorage.clear();
       localStorageTouched = true;
-      elPopStatus.textContent = "\u2714 localStorage cleared.";
-      elPopStatus.className = "status-bar success";
+      setStatus(elPopStatus, "\u2714 localStorage cleared.", "success");
     });
 
     // ----------------------------------------------------------------
@@ -351,12 +361,14 @@
     btnMeasure.addEventListener("click", () => {
       if (measureDone) return;
 
-      const delay = parseInt(elReadDelay.value) || 0;
+      const delay = parseInt(elReadDelay.value, 10) || 0;
 
       if (delay > 0) {
         btnMeasure.disabled = true;
         elCountdown.style.display = "block";
         let remaining = delay;
+
+        elCountdown.textContent = `Reading in ${remaining / 1000}s\u2026`;
 
         const tick = setInterval(() => {
           remaining -= 1000;
@@ -365,13 +377,9 @@
             elCountdown.style.display = "none";
             doMeasure();
           } else {
-            elCountdown.textContent =
-              "Reading in " + (remaining / 1000) + "s\u2026";
+            elCountdown.textContent = `Reading in ${remaining / 1000}s\u2026`;
           }
         }, 1000);
-
-        elCountdown.textContent =
-          "Reading in " + (delay / 1000) + "s\u2026";
       } else {
         doMeasure();
       }
@@ -390,9 +398,10 @@
     }
 
     function showResult() {
-      elResultDuration.textContent = resultDuration.toFixed(3);
-      elResultDetails.textContent =
-        entryCount + " entries \u00b7 " + resultDuration.toFixed(3) + " ms";
+      const duration = resultDuration.toFixed(3);
+
+      elResultDuration.textContent = duration;
+      elResultDetails.textContent = `${entryCount} entries \u00b7 ${duration} ms`;
       elResult.style.display = "block";
 
       btnMeasure.disabled = true;
@@ -402,11 +411,10 @@
         elWarmWarning.style.display = "block";
       }
 
-      document.getElementById("stat-duration").textContent =
-        resultDuration.toFixed(3) + " ms";
-      document.getElementById("stat-entries").textContent = entryCount;
-      document.getElementById("stat-type").textContent =
-        localStorageTouched ? "Warm (cached)" : "Cold (from disk)";
+      const readType = localStorageTouched ? "Warm (cached)" : "Cold (from disk)";
+      elStatDuration.textContent = `${duration} ms`;
+      elStatEntries.textContent = entryCount;
+      elStatType.textContent = readType;
       elSummary.style.display = "block";
     }
 
@@ -414,22 +422,20 @@
     // Copy result
     // ----------------------------------------------------------------
     btnCopy.addEventListener("click", () => {
-      const lines = [
+      if (resultDuration === null) return;
+
+      const readType = localStorageTouched ? "warm" : "cold";
+      const text = [
         "LocalStorage First Read Benchmark",
-        "Duration:  " + resultDuration.toFixed(3) + " ms",
-        "Entries:   " + entryCount,
-        "Read type: " + (localStorageTouched ? "warm" : "cold"),
-        "Timestamp: " + new Date().toISOString(),
-      ];
-      navigator.clipboard.writeText(lines.join("\n")).then(
-        () => {
-          elPopStatus.textContent = "\u2714 Copied to clipboard!";
-          elPopStatus.className = "status-bar success";
-        },
-        () => {
-          elPopStatus.textContent = "Failed to copy to clipboard.";
-          elPopStatus.className = "status-bar error";
-        }
+        `Duration:  ${resultDuration.toFixed(3)} ms`,
+        `Entries:   ${entryCount}`,
+        `Read type: ${readType}`,
+        `Timestamp: ${new Date().toISOString()}`,
+      ].join("\n");
+
+      navigator.clipboard.writeText(text).then(
+        () => setStatus(elPopStatus, "\u2714 Copied to clipboard!", "success"),
+        () => setStatus(elPopStatus, "Failed to copy to clipboard.", "error")
       );
     });
   </script>
