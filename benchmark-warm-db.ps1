@@ -45,8 +45,8 @@ param(
     [int]$Delay = 5000,
     [string]$EdgePath = "$env:LOCALAPPDATA\Microsoft\Edge SxS\Application\msedge.exe",
     [int]$CdpPort = 9222,
-    [int]$PortA = 8080,
-    [int]$PortB = 8081,
+    [int]$PortA = 9090,
+    [int]$PortB = 9091,
     [string]$PythonCmd = "python"
 )
 
