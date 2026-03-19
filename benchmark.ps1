@@ -206,15 +206,14 @@ function Run-Backend {
     return $results
 }
 
-function Show-Stats {
+function Format-Stats {
     param(
         [string]$Name,
         [double[]]$Values
     )
 
     if ($Values.Count -eq 0) {
-        Write-Host "$Name : no results" -ForegroundColor Red
-        return
+        return "$Name : no results"
     }
 
     $sorted = $Values | Sort-Object
@@ -229,14 +228,16 @@ function Show-Stats {
     $variance = ($Values | ForEach-Object { ($_ - $mean) * ($_ - $mean) } | Measure-Object -Sum).Sum / $Values.Count
     $stddev   = [math]::Sqrt($variance)
 
-    Write-Host ""
-    Write-Host "$Name Results ($($Values.Count) runs):" -ForegroundColor Cyan
-    Write-Host "  Min:    $($min.ToString('F3')) ms"
-    Write-Host "  Max:    $($max.ToString('F3')) ms"
-    Write-Host "  Mean:   $($mean.ToString('F3')) ms"
-    Write-Host "  Median: $($median.ToString('F3')) ms"
-    Write-Host "  StdDev: $($stddev.ToString('F3')) ms"
-    Write-Host "  All:    $($Values | ForEach-Object { $_.ToString('F3') })" -ForegroundColor DarkGray
+    $lines = @(
+        "$Name Results ($($Values.Count) runs):",
+        "  Min:    $($min.ToString('F3')) ms",
+        "  Max:    $($max.ToString('F3')) ms",
+        "  Mean:   $($mean.ToString('F3')) ms",
+        "  Median: $($median.ToString('F3')) ms",
+        "  StdDev: $($stddev.ToString('F3')) ms",
+        "  All:    $($Values | ForEach-Object { $_.ToString('F3') })"
+    )
+    return $lines -join "`n"
 }
 
 # ---------------------------------------------------------------
@@ -271,13 +272,31 @@ $sqliteResults = Run-Backend -Name "SQLite" `
     -FeatureFlags @("--enable-features=DomStorageSqlite")
 
 # --- Summary ---
+$leveldbStats = Format-Stats -Name "LevelDB" -Values $leveldbResults
+$sqliteStats  = Format-Stats -Name "SQLite"  -Values $sqliteResults
+
 Write-Host ""
 Write-Host "=============================================" -ForegroundColor White
 Write-Host " SUMMARY" -ForegroundColor White
 Write-Host "=============================================" -ForegroundColor White
-
-Show-Stats -Name "LevelDB" -Values $leveldbResults
-Show-Stats -Name "SQLite"  -Values $sqliteResults
-
 Write-Host ""
-Write-Host "Done." -ForegroundColor Green
+Write-Host $leveldbStats -ForegroundColor Cyan
+Write-Host ""
+Write-Host $sqliteStats -ForegroundColor Cyan
+Write-Host ""
+
+# --- Write results to file ---
+$resultsPath = Join-Path $PSScriptRoot "results.txt"
+$header = @(
+    "LocalStorage First Read Benchmark",
+    "Date:      $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+    "Runs:      $Runs",
+    "Entries:   $Entries",
+    "ValueSize: $ValueSize chars",
+    "Delay:     $Delay ms",
+    "Edge:      $EdgePath",
+    "",
+    "============================================="
+)
+($header + @("", $leveldbStats, "", $sqliteStats, "")) -join "`n" | Set-Content -Path $resultsPath
+Write-Host "Results written to $resultsPath" -ForegroundColor Green
