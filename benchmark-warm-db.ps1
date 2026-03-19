@@ -417,7 +417,8 @@ try {
 
     # --- Write results to file ---
     $resultsPath = Join-Path $PSScriptRoot "results-warm-db.txt"
-    $header = @(
+    $separator = "=" * 60
+    $output = @(
         "LocalStorage Warm-DB Benchmark",
         "Date:      $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
         "Runs:      $Runs",
@@ -429,10 +430,16 @@ try {
         "",
         "Tab1 = Origin A (cold DB open)",
         "Tab2 = Origin B (DB already open, data not cached)",
-        "Delta = Tab1 - Tab2 (DB opening overhead)"
+        "Delta = Tab1 - Tab2 (DB opening overhead)",
+        "",
+        $separator,
+        "",
+        $leveldbTable,
+        "",
+        $sqliteTable,
+        ""
     )
-    ($header + @("", "=" * 60, "", $leveldbTable, "", $sqliteTable, "")) -join "`n" |
-        Set-Content -Path $resultsPath
+    $output -join "`n" | Set-Content -Path $resultsPath
     Write-Host "Results written to $resultsPath" -ForegroundColor Green
 } finally {
     Stop-HttpServers
