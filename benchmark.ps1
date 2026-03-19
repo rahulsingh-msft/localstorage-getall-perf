@@ -65,8 +65,11 @@ function Stop-EdgeTree {
             }
         } catch { }
 
-        # Force kill if still running.
-        taskkill /T /F /PID $script:EdgePid 2>$null | Out-Null
+        # Force kill only if still running.
+        $stillRunning = Get-Process -Id $script:EdgePid -ErrorAction SilentlyContinue
+        if ($stillRunning) {
+            taskkill /T /F /PID $script:EdgePid 2>$null | Out-Null
+        }
         $script:EdgePid = $null
     }
 
