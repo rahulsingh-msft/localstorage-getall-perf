@@ -147,7 +147,7 @@ function Open-NewTab {
 
     # Use CDP to open a new tab.
     $encodedUrl = [System.Uri]::EscapeDataString($Url)
-    Invoke-RestMethod -Uri "http://localhost:$CdpPort/json/new?$encodedUrl" -TimeoutSec 5 | Out-Null
+    Invoke-RestMethod -Method Put -Uri "http://localhost:$CdpPort/json/new?$encodedUrl" -TimeoutSec 5 | Out-Null
 }
 
 function Start-HttpServers {
