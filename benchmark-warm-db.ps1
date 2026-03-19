@@ -154,11 +154,11 @@ function Start-HttpServers {
     $siteDir = $PSScriptRoot
 
     $script:ServerA = Start-Process -FilePath $PythonCmd `
-        -ArgumentList "-m http.server $PortA --bind 127.0.0.1" `
+        -ArgumentList "-m http.server $PortA" `
         -WorkingDirectory $siteDir -WindowStyle Hidden -PassThru
 
     $script:ServerB = Start-Process -FilePath $PythonCmd `
-        -ArgumentList "-m http.server $PortB --bind 127.0.0.1" `
+        -ArgumentList "-m http.server $PortB" `
         -WorkingDirectory $siteDir -WindowStyle Hidden -PassThru
 
     # Wait for servers to be ready.
@@ -235,8 +235,8 @@ function Run-WarmDbBackend {
 
     Remove-UserDataDir -Path $UserDataDir
 
-    $urlA = "http://localhost:$PortA/"
-    $urlB = "http://localhost:$PortB/"
+    $urlA = "http://[::1]:$PortA/"
+    $urlB = "http://[::1]:$PortB/"
 
     # --- Populate both origins ---
     Write-Host "Populating origin A (port $PortA)..." -ForegroundColor Yellow
@@ -244,7 +244,7 @@ function Run-WarmDbBackend {
     Launch-Edge -Url $populateUrlA -UserDataDir $UserDataDir -ExtraFlags $FeatureFlags
 
     try {
-        $title = Get-CdpResult -UrlPattern "*localhost:$PortA*" -TimeoutSec 60
+        $title = Get-CdpResult -UrlPattern "*:$PortA/*" -TimeoutSec 60
         if ($title -match "^POPULATED:(\d+)") {
             Write-Host "  Origin A: $($Matches[1]) entries." -ForegroundColor Green
         }
@@ -259,7 +259,7 @@ function Run-WarmDbBackend {
     Open-NewTab -Url $populateUrlB
 
     try {
-        $title = Get-CdpResult -UrlPattern "*localhost:$PortB*" -TimeoutSec 60
+        $title = Get-CdpResult -UrlPattern "*:$PortB/*" -TimeoutSec 60
         if ($title -match "^POPULATED:(\d+)") {
             Write-Host "  Origin B: $($Matches[1]) entries." -ForegroundColor Green
         }
@@ -288,7 +288,7 @@ function Run-WarmDbBackend {
 
         try {
             $timeout = [math]::Max(60, ($Delay / 1000) + 30)
-            $title = Get-CdpResult -UrlPattern "*localhost:$PortA*" -TimeoutSec $timeout
+            $title = Get-CdpResult -UrlPattern "*:$PortA/*" -TimeoutSec $timeout
             if ($title -match "^RESULT:([\d.]+):(\d+)") {
                 $tab1Duration = [double]$Matches[1]
             }
@@ -304,7 +304,7 @@ function Run-WarmDbBackend {
 
         try {
             $timeout = [math]::Max(60, ($Delay / 1000) + 30)
-            $title = Get-CdpResult -UrlPattern "*localhost:$PortB*" -TimeoutSec $timeout
+            $title = Get-CdpResult -UrlPattern "*:$PortB/*" -TimeoutSec $timeout
             if ($title -match "^RESULT:([\d.]+):(\d+)") {
                 $tab2Duration = [double]$Matches[1]
             }
