@@ -50,11 +50,28 @@ $ErrorActionPreference = "Stop"
 $script:EdgePid = $null
 
 function Stop-EdgeTree {
+    # Try graceful shutdown first via CDP so Edge can flush data to disk.
+    try {
+        $tabs = Invoke-RestMethod -Uri "http://localhost:$CdpPort/json" -TimeoutSec 3 -ErrorAction SilentlyContinue
+        Invoke-RestMethod -Uri "http://localhost:$CdpPort/json/close" -TimeoutSec 3 -ErrorAction SilentlyContinue 2>$null | Out-Null
+    } catch { }
+
+    # Wait for Edge to exit gracefully.
     if ($script:EdgePid) {
+        try {
+            $proc = Get-Process -Id $script:EdgePid -ErrorAction SilentlyContinue
+            if ($proc) {
+                $proc.CloseMainWindow() | Out-Null
+                $proc.WaitForExit(10000) | Out-Null
+            }
+        } catch { }
+
+        # Force kill if still running.
         taskkill /T /F /PID $script:EdgePid 2>$null | Out-Null
         $script:EdgePid = $null
     }
-    # Also catch any orphaned Edge processes using our CDP port.
+
+    # Catch any orphaned Edge processes.
     Get-Process msedge -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 3
 }
