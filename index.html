@@ -7,8 +7,8 @@
     // URL-driven automation modes (runs before DOM is ready):
     //
     //   ?populate=10000&valueSize=100
-    //     Writes entries to localStorage, sets document.title to
-    //     "POPULATED:<count>" when done.
+    //     Writes entries to localStorage using seeded PRNG values,
+    //     sets document.title to "POPULATED:<count>" when done.
     //
     //   ?auto&delay=5000
     //     Waits <delay> ms (default 5000), then reads localStorage.length
@@ -17,13 +17,35 @@
     (function() {
       var params = new URLSearchParams(location.search);
 
+      // Simple seeded PRNG (mulberry32). Same seed always produces the
+      // same sequence, so both backends get identical data.
+      function mulberry32(seed) {
+        return function() {
+          seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+          var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+          t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+          return ((t ^ t >>> 14) >>> 0) / 4294967296;
+        };
+      }
+
+      function seededValue(index, length) {
+        var rng = mulberry32(index * 2654435761);
+        var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        var result = "";
+        for (var j = 0; j < length; j++) {
+          result += chars.charAt(Math.floor(rng() * chars.length));
+        }
+        return result;
+      }
+
       if (params.has("populate")) {
         var n = parseInt(params.get("populate")) || 1000;
         var v = parseInt(params.get("valueSize")) || 100;
-        var val = "a".repeat(v);
         try {
           localStorage.clear();
-          for (var i = 0; i < n; i++) localStorage.setItem("k_" + i, val);
+          for (var i = 0; i < n; i++) {
+            localStorage.setItem("k_" + i, seededValue(i, v));
+          }
           document.title = "POPULATED:" + localStorage.length;
         } catch (e) {
           document.title = "POPULATED:" + localStorage.length;
@@ -292,6 +314,28 @@
       el.className = type ? `status-bar ${type}` : "status-bar";
     }
 
+    // Seeded PRNG (mulberry32). Same seed always produces the same
+    // sequence, so both backends get identical data.
+    function mulberry32(seed) {
+      return function() {
+        seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+        let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+        t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    const CHARSET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+    function seededValue(index, length) {
+      const rng = mulberry32(index * 2654435761);
+      let result = "";
+      for (let j = 0; j < length; j++) {
+        result += CHARSET.charAt(Math.floor(rng() * CHARSET.length));
+      }
+      return result;
+    }
+
     // ----------------------------------------------------------------
     // Data-size estimate
     // localStorage quota is ~5M characters per origin (stored as
@@ -323,12 +367,11 @@
 
       const numEntries = parseInt(elNumEntries.value, 10);
       const valueSize  = parseInt(elValueSize.value, 10);
-      const value = "a".repeat(valueSize);
 
       try {
         localStorage.clear();
         for (let i = 0; i < numEntries; i++) {
-          localStorage.setItem(`k_${i}`, value);
+          localStorage.setItem(`k_${i}`, seededValue(i, valueSize));
         }
         localStorageTouched = true;
         setStatus(elPopStatus,

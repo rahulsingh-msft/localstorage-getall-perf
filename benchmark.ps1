@@ -32,7 +32,7 @@
     .\benchmark.ps1 -Runs 10 -Entries 10000 -ValueSize 100 -Delay 5000
 #>
 param(
-    [int]$Runs = 10,
+    [int]$Runs = 20,
     [int]$Entries = 10000,
     [int]$ValueSize = 100,
     [int]$Delay = 5000,
@@ -227,6 +227,7 @@ function Format-Stats {
     }
     $variance = ($Values | ForEach-Object { ($_ - $mean) * ($_ - $mean) } | Measure-Object -Sum).Sum / $Values.Count
     $stddev   = [math]::Sqrt($variance)
+    $ciMargin = 1.96 * $stddev / [math]::Sqrt($Values.Count)
 
     $lines = @(
         "$Name Results ($($Values.Count) runs):",
@@ -235,6 +236,7 @@ function Format-Stats {
         "  Mean:   $($mean.ToString('F3')) ms",
         "  Median: $($median.ToString('F3')) ms",
         "  StdDev: $($stddev.ToString('F3')) ms",
+        "  95% CI: $($mean.ToString('F3')) +/- $($ciMargin.ToString('F3')) ms",
         "  All:    $($Values | ForEach-Object { $_.ToString('F3') })"
     )
     return $lines -join "`n"
@@ -247,6 +249,7 @@ Write-Host "LocalStorage First Read Benchmark - Automated" -ForegroundColor Whit
 Write-Host "  Runs:      $Runs"
 Write-Host "  Entries:   $Entries"
 Write-Host "  ValueSize: $ValueSize chars"
+Write-Host "  Delay:     $Delay ms"
 Write-Host "  Delay:     $Delay ms"
 Write-Host "  Edge:      $EdgePath"
 Write-Host ""

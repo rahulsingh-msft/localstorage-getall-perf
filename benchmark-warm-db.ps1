@@ -39,7 +39,7 @@
     .\benchmark-warm-db.ps1 -Runs 10 -Entries 10000 -Delay 5000
 #>
 param(
-    [int]$Runs = 10,
+    [int]$Runs = 20,
     [int]$Entries = 10000,
     [int]$ValueSize = 100,
     [int]$Delay = 5000,
@@ -211,13 +211,15 @@ function Compute-Stats {
     $variance = ($Values | ForEach-Object { ($_ - $mean) * ($_ - $mean) } |
         Measure-Object -Sum).Sum / $Values.Count
     $stddev = [math]::Sqrt($variance)
+    $ciMargin = 1.96 * $stddev / [math]::Sqrt($Values.Count)
 
     return @{
-        Min    = $min
-        Max    = $max
-        Mean   = $mean
-        Median = $median
-        StdDev = $stddev
+        Min      = $min
+        Max      = $max
+        Mean     = $mean
+        Median   = $median
+        StdDev   = $stddev
+        CiMargin = $ciMargin
     }
 }
 
@@ -362,6 +364,10 @@ function Format-Table {
         $lines += "{0,-6} {1,12:F3} {2,12:F3} {3,12:F3}" -f "Min", $stats1.Min, $stats2.Min, $statsD.Min
         $lines += "{0,-6} {1,12:F3} {2,12:F3} {3,12:F3}" -f "Max", $stats1.Max, $stats2.Max, $statsD.Max
         $lines += "{0,-6} {1,12:F3} {2,12:F3} {3,12:F3}" -f "StdDev", $stats1.StdDev, $stats2.StdDev, $statsD.StdDev
+        $lines += "{0,-6} {1,12} {2,12} {3,12}" -f "95% CI", `
+            ("+/- " + $stats1.CiMargin.ToString('F3')), `
+            ("+/- " + $stats2.CiMargin.ToString('F3')), `
+            ("+/- " + $statsD.CiMargin.ToString('F3'))
     }
 
     return $lines -join "`n"
@@ -374,6 +380,7 @@ Write-Host "LocalStorage Warm-DB Benchmark" -ForegroundColor White
 Write-Host "  Runs:      $Runs"
 Write-Host "  Entries:   $Entries per origin"
 Write-Host "  ValueSize: $ValueSize chars"
+Write-Host "  Delay:     $Delay ms"
 Write-Host "  Delay:     $Delay ms"
 Write-Host "  Ports:     $PortA (origin A), $PortB (origin B)"
 Write-Host "  Edge:      $EdgePath"
